@@ -1,2 +1,6 @@
-nasm -f elf -o hello.o hello.s && ld -m elf_i386 -o hello hello.o
+nasm -f elf -o hello.o hello.s 
+
+ld -m elf_i386 -o hello hello.o
+or
+gcc -no-pie -m32 hello.o -o hello
 
