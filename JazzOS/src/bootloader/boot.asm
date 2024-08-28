@@ -43,9 +43,59 @@ main:
 	; Root directory: start 19th sector (right after previous two)
 	; Data
 
+	mov ax, [bdb_sectors_per_fat]
+	mov bx, [bdb_fat_count]
+	xor bh, bh
+	mul bx
+	add ax, [bdb_reserved_sectors] ; lba of the root directory
 
-	
-	hlt
+	push ax
+
+	mov ax, [bdp_dir_entries_count] ; number of possible directories/files probably in root
+	shl ax, 5						; each entrie is 32 bytes big?
+	xor dx, dx						; for remainder of a division						
+	div word [bdb_bytes_per_sector]	; count how many sectors are used by it
+
+	test dx, dx						; if remainder is 0 then 0
+	jz rootDirAfter					; if no remainder, go to
+	inc ax							; if there is remainder then add one (not full) sector
+
+rootDirAfter:
+	mov cl, al
+	pop ax
+	mov dl, [ebr_drive_number]
+
+	mov bx, buffer
+
+	call disk_read
+
+	xor bx, bx
+
+	mov di, buffer
+	; at this stage we loaded the whole root direktory into buffer (so we have it in ram)
+	call search_kernel
+
+search_kernel:
+	mov si, file_kernel_bin
+	mov cx, 11
+	push di
+	repe cmpsb
+	pop di
+	je foundKernel
+
+	add di, 32
+	inc bx
+	cmp bx, [bdr_dir_entries_count]
+	jl search_kernel
+
+	jmp kernel_not_found
+
+foundKernel:
+	;
+
+kernel_not_found:
+	mov si, msg_kernel_not_found
+	call print
 	
 halt:
 	jmp halt
