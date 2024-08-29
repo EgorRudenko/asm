@@ -1,11 +1,13 @@
-org 0x7c00
-bit 16
+org 0x0
+bits 16
 
 start:
 	mov si, msg
 	call print
 	hlt
 
+halt:
+	jmp halt
 print:
 	mov ah, 0Eh
 	mov bh, 0
@@ -16,13 +18,9 @@ print_loop:
 	cmp al, 0
 	jz done_printing
 	int 10h
+	jmp print_loop
 done_printing:
 	ret
 
-halt:
-	jmp halt
-
-
 msg db "hello from kernel", 0x0D, 0x0A, 0
-times 510-($-$$) db 0
-dw 0AA55h
+

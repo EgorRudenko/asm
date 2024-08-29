@@ -33,47 +33,49 @@ main:
 	mov sp, 0x7C00
 
 
-	mov si, os_boot_msg
-	call print
+	;mov si, os_boot_msg
+	;call print
 
 	; fat structure
 	; 4 segments
-	; 1 reserved (or resurved_sectors variable)
+	; 1 reserved (or reserved_sectors variable)
 	; fat_count * sectors_per_fat = 18 sectors for file allocation table
 	; Root directory: start 19th sector (right after previous two)
 	; Data
+	
+	;mov [ebr_drive_number], dl
+	;mov ax, 1
+	;mov cl, 1
+	;mov bx, 0x7e00
+	;call disk_read
 
 	mov ax, [bdb_sectors_per_fat]
-	mov bx, [bdb_fat_count]
+	mov bl, [bdb_fat_count]
 	xor bh, bh
 	mul bx
-	add ax, [bdb_reserved_sectors] ; lba of the root directory
+	add ax, [bdb_reserved_sectors] ; lba of the root directorie
 
 	push ax
 
-	mov ax, [bdp_dir_entries_count] ; number of possible directories/files probably in root
+	mov ax, [bdb_dir_entries_count] ; number of possible directories/files probably in root
 	shl ax, 5						; each entrie is 32 bytes big?
 	xor dx, dx						; for remainder of a division						
 	div word [bdb_bytes_per_sector]	; count how many sectors are used by it
 
 	test dx, dx						; if remainder is 0 then 0
 	jz rootDirAfter					; if no remainder, go to
-	inc ax							; if there is remainder then add one (not full) sector
+	inc ax								; if there is remainder then add one (not full) sector
 
 rootDirAfter:
 	mov cl, al
 	pop ax
 	mov dl, [ebr_drive_number]
-
 	mov bx, buffer
-
 	call disk_read
 
 	xor bx, bx
-
 	mov di, buffer
-	; at this stage we loaded the whole root direktory into buffer (so we have it in ram)
-	call search_kernel
+	; at this stage we loaded the whole root directory into buffer (so we have it in ram)
 
 search_kernel:
 	mov si, file_kernel_bin
@@ -85,17 +87,74 @@ search_kernel:
 
 	add di, 32
 	inc bx
-	cmp bx, [bdr_dir_entries_count]
+	cmp bx, [bdb_dir_entries_count]
 	jl search_kernel
 
 	jmp kernel_not_found
 
 foundKernel:
-	;
+	mov ax, [di+26]
+	mov [kernel_cluster], ax
+	mov ax, [bdb_reserved_sectors]
+	mov bx, buffer
+	mov cl, bdb_sectors_per_fat
+	mov dl, [ebr_drive_number]
+
+	call disk_read
+
+	mov bx, kernel_load_segment
+	mov es, bx
+	mov bx, kernel_offset
+
+loadKernelLoop:
+	mov ax, [kernel_cluster]
+	add ax, 31
+	mov cl, 1
+	mov dl, [ebr_drive_number]
+
+	call disk_read
+
+	add bx, [bdb_bytes_per_sector]
+	mov ax, [kernel_cluster]
+	mov cx, 3
+	mul cx
+	mov cx, 2
+	div cx
+
+	mov si, buffer
+	add si, ax
+	mov ax, [ds:si]
+
+	or dx, dx
+	jz even
+
+odd:
+	shr ax, 4
+	jmp nextClusterAfter
+
+even:
+	and ax, 0x0fff
+
+nextClusterAfter:
+	cmp ax, 0x0ff8
+	jae readFinish
+
+	mov [kernel_cluster], ax
+	jmp loadKernelLoop
+
+readFinish:
+	mov dl, [ebr_drive_number]
+	mov ax, kernel_load_segment
+	mov ds, ax
+	mov es, ax
+	jmp kernel_load_segment:kernel_offset
+	hlt
 
 kernel_not_found:
 	mov si, msg_kernel_not_found
 	call print
+
+	hlt
 	
 halt:
 	jmp halt
@@ -149,6 +208,7 @@ lba_to_chs:
 
 
 disk_read:
+	push si
 	push ax
 	push bx
 	push cx
@@ -172,7 +232,7 @@ retry:
 	jnz retry
 
 failDiskRead:
-	mov si, os_boot_msg
+	mov si, disk_fail
 	call print
 	jmp halt
 
@@ -185,6 +245,7 @@ diskReset:
 	popa
 	ret
 doneRead:
+	pop si
 	pop di
 	pop dx
 	pop cx
@@ -214,8 +275,9 @@ doneRead:
 
 os_boot_msg: db 'Hello from bootloader', 0x0D, 0x0A, 0
 file_kernel_bin: db 'KERNEL  BIN'
-msg_kernel_not_found: db 'Fuck you. You've forgotten about kernel. Live with it', 0x0D, 0x0A, 0
+msg_kernel_not_found: db 'Fuck you. You have forgotten about kernel. Live with it', 0x0D, 0x0A, 0
 kernel_cluster: dw 0
+disk_fail: db 'disk error'
 
 kernel_load_segment EQU 0x2000
 kernel_offset EQU 0
